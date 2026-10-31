@@ -1,13 +1,18 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TABLE entities (
+CREATE TABLE IF NOT EXISTS entities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    business_key VARCHAR(255) NOT NULL,
+    business_key VARCHAR(255) UNIQUE NOT NULL,
     embedding vector(384),
     state VARCHAR(50) NOT NULL,
     reputation_score NUMERIC(5,2) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(business_key)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX ON entities USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+CREATE INDEX IF NOT EXISTS entities_embedding_idx ON entities USING hnsw (embedding vector_cosine_ops);
+
+-- New table for true transactional idempotency
+CREATE TABLE IF NOT EXISTS processed_events (
+    event_id VARCHAR(255) PRIMARY KEY,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
