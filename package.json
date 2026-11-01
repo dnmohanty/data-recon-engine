@@ -8,7 +8,8 @@
     "worker": "tsx src/worker.ts",
     "evaluate": "tsx src/evaluate.ts",
     "assert": "tsx src/assert.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start:prod": "npm start & npm run worker"
   },
   "dependencies": {
     "@xenova/transformers": "^2.17.2",
