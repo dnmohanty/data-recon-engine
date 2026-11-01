@@ -27,7 +27,7 @@ const redisSub = createClient({ url: redisUrl });
 redisSub.connect();
 
 // 2. Public Demo Route to light up the dashboard
-app.post('/demo', async (req: Request, res: Response) => {
+app.get('/demo', async (req: Request, res: Response) => {
   const companies = ['Apex', 'Vertex', 'Zenith', 'Quantum', 'Nexus'];
   let count = 0;
   for (const comp of companies) {
