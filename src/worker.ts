@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import { Pool } from 'pg';
 import { pipeline } from '@xenova/transformers';
 import { createClient } from 'redis';
-import {Redis} from 'ioredis';
+import { Redis } from 'ioredis';
 import { THRESHOLD } from './config.js';
 import { normalizeName } from './normalize.js';
 import { computeNextState } from './stateMachine.js';
@@ -23,6 +23,7 @@ const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
 
 const worker = new Worker('ingest', async job => {
   const { eventId, businessKey, data } = job.data;
+  console.log(`Starting job ${eventId} - ${data?.name}`);
   
   const normalizedName = normalizeName(data?.name ?? businessKey);
   const emb = Array.from((await embedder(normalizedName, { pooling: 'mean', normalize: true })).data);
@@ -38,6 +39,7 @@ const worker = new Worker('ingest', async job => {
     );
     if (checkRes.rowCount === 0) {
       await client.query('ROLLBACK');
+      console.log(`Finished job ${eventId} (Skipped duplicate)`);
       return;
     }
 
@@ -94,12 +96,21 @@ const worker = new Worker('ingest', async job => {
     } catch (pubErr) {
       console.error('Failed to publish to SSE:', pubErr);
     }
+    
+    console.log(`Finished job ${eventId}`);
+    
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
   } finally {
     client.release();
   }
-}, { connection, concurrency: 5 });
+// Changed concurrency from 5 to 1 here so your local CPU doesn't freeze
+}, { connection, concurrency: 1 }); 
 
 worker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
+worker.on('drained', () => {
+  console.log('\n======================================================');
+  console.log('🎉 QUEUE COMPLETELY DRAINED! RUN `npm run assert` NOW!');
+  console.log('======================================================\n');
+});

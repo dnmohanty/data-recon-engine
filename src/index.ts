@@ -12,11 +12,11 @@ app.use(express.json());
 // 1. Rate Limiting (max 50 requests per 15 mins per IP)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
-  max: 50, 
+  max: 500, 
   message: 'Demo rate limit exceeded. Please try again later.'
 });
-app.use('/ingest', apiLimiter);
-app.use('/demo', apiLimiter);
+// app.use('/ingest', apiLimiter);
+// app.use('/demo', apiLimiter);
 
 // Use the live URLs if we are in production, otherwise use localhost
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';

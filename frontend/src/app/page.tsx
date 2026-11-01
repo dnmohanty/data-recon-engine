@@ -57,6 +57,12 @@ export default function Dashboard() {
               </div>
               <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded transition-colors">
                 Fire Event 🚀
+                <button 
+  onClick={() => fetch('https://YOUR-RENDER-API-URL.onrender.com/demo')}
+  className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+>
+  Run 150-Event Demo 🧪
+</button>
               </button>
             </form>
           </div>
