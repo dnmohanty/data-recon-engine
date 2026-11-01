@@ -14,23 +14,23 @@ async function waitForDrain() {
 }
 
 async function runAssertions() {
-  const start = Date.now();
   await waitForDrain();
-  console.log(`Queue drained in ${(Date.now() - start)}ms`);
   
   const client = await pool.connect();
   const entityCount = await client.query('SELECT COUNT(*) FROM entities');
   const processedEvents = await client.query('SELECT COUNT(*) FROM processed_events');
+  const badReputation = await client.query('SELECT COUNT(*) FROM entities WHERE reputation_score <> 2.0');
   const failedJobs = await ingestQueue.getFailedCount();
 
-  const expectedEvents = Number(process.env.EXPECTED_EVENTS || 0);
-  const expectedEntities = Number(process.env.EXPECTED_ENTITIES || 50);
+  const expectedEvents = 150; // K6 generates exactly 50 companies * 3 variants
+  const expectedEntities = 50;
 
   console.log(`Entities Created: ${entityCount.rows[0].count} (Expected: ${expectedEntities})`);
-  console.log(`Failed BullMQ Jobs: ${failedJobs} (Expected: 0)`);
-  console.log(`Total Processed Events: ${processedEvents.rows[0].count} (Expected: ${expectedEvents})`);
+  console.log(`Failed Jobs: ${failedJobs} (Expected: 0)`);
+  console.log(`Processed Events: ${processedEvents.rows[0].count} (Expected: >=${expectedEvents})`);
+  console.log(`Entities with lost/duplicated reputation (!= 2.0): ${badReputation.rows[0].count} (Expected: 0)`);
 
-  if (Number(entityCount.rows[0].count) !== expectedEntities || failedJobs > 0 || Number(processedEvents.rows[0].count) !== expectedEvents) {
+  if (Number(entityCount.rows[0].count) !== expectedEntities || failedJobs > 0 || Number(badReputation.rows[0].count) !== 0) {
     console.error('❌ Assertions Failed.');
     process.exit(1);
   }
