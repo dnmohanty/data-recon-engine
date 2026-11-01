@@ -3,27 +3,37 @@ import { Pool } from 'pg';
 import { createClient } from 'redis';
 import { pipeline } from '@xenova/transformers';
 import { calculateNewState } from './stateMachine.js';
+import { THRESHOLD } from './evaluate.js';
 
 const pool = new Pool({ user: 'user', host: 'localhost', database: 'recon', password: 'password', port: 5432 });
 const redisPub = createClient({ url: 'redis://localhost:6379' });
 
 class EmbeddingPipeline {
-  static instance: any = null;
+  static instancePromise: Promise<any> | null = null;
+  
   static async getInstance() {
-    if (!this.instance) this.instance = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-    return this.instance;
+    if (!this.instancePromise) {
+      this.instancePromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2').catch(err => {
+        this.instancePromise = null; // Clear cache on failure so next job retries
+        throw err;
+      });
+    }
+    return this.instancePromise;
   }
 }
 
 const worker = new Worker('ingest', async (job) => {
   if (!redisPub.isOpen) await redisPub.connect();
-  const { eventId, businessKey, data } = job.data;
+  
+  // Coerce eventId to string to prevent BullMQ/Redis errors
+  const eventId = String(job.data.eventId);
+  const businessKey = job.data.businessKey;
+  const data = job.data.data;
   
   const textToEmbed = (data?.name || businessKey).toLowerCase().trim();
   const embedder = await EmbeddingPipeline.getInstance();
   const output = await embedder(textToEmbed, { pooling: 'mean', normalize: true });
   const embeddingStr = `[${Array.from(output.data).join(',')}]`;
-  const threshold = 0.90;
 
   const client = await pool.connect();
   let publishPayload = null;
@@ -51,12 +61,11 @@ const worker = new Worker('ingest', async (job) => {
         `SELECT id, state, reputation_score, 1 - (embedding <=> $1::vector) AS similarity 
          FROM entities ORDER BY embedding <=> $1::vector LIMIT 1`, [embeddingStr]
       );
-      if (searchRes.rows[0] && searchRes.rows[0].similarity >= threshold) {
+      if (searchRes.rows[0] && searchRes.rows[0].similarity >= THRESHOLD) {
         match = searchRes.rows[0];
         await client.query(`SELECT id FROM entities WHERE id = $1 FOR UPDATE`, [match.id]);
       }
     }
-
 
     if (!match) {
       const insertRes = await client.query(
