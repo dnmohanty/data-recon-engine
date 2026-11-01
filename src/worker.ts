@@ -15,8 +15,8 @@ const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2')
 const worker = new Worker('ingest', async job => {
   const { eventId, businessKey, data } = job.data;
   
-  // Exact-key lookup fallback and normalization
   const normalizedName = normalizeName(data?.name ?? businessKey);
+  // Embedding is computed OUTSIDE the transaction!
   const emb = Array.from((await embedder(normalizedName, { pooling: 'mean', normalize: true })).data);
   const embString = `[${emb.join(',')}]`;
 
@@ -24,7 +24,6 @@ const worker = new Worker('ingest', async job => {
   try {
     await client.query('BEGIN');
     
-    // Atomic idempotency check (inserts first, drops if conflict exists)
     const checkRes = await client.query(
       'INSERT INTO processed_events (event_id) VALUES ($1) ON CONFLICT (event_id) DO NOTHING RETURNING event_id', 
       [eventId]
@@ -34,7 +33,6 @@ const worker = new Worker('ingest', async job => {
       return;
     }
 
-    // Global advisory lock to prevent deduplication race conditions
     await client.query('SELECT pg_advisory_xact_lock(1)');
 
     let entityId;
@@ -46,7 +44,6 @@ const worker = new Worker('ingest', async job => {
       const match = exactRes.rows[0];
       entityId = match.id;
       newStateData = computeNextState(match.state, parseFloat(match.reputation_score));
-      
       await client.query(
         'UPDATE entities SET state = $1, reputation_score = $2 WHERE id = $3',
         [newStateData.state, newStateData.reputation_score, entityId]
@@ -64,7 +61,6 @@ const worker = new Worker('ingest', async job => {
         const match = matchRes.rows[0];
         entityId = match.id;
         newStateData = computeNextState(match.state, parseFloat(match.reputation_score));
-        
         await client.query(
           'UPDATE entities SET state = $1, reputation_score = $2 WHERE id = $3',
           [newStateData.state, newStateData.reputation_score, entityId]
@@ -81,7 +77,6 @@ const worker = new Worker('ingest', async job => {
 
     await client.query('COMMIT');
     
-    // 1. Publish in its own try/catch AFTER commit so Redis errors don't rollback Postgres
     try {
       await redisPub.publish('entity_updates', JSON.stringify({ 
         id: entityId, 

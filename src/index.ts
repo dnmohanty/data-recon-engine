@@ -12,14 +12,15 @@ const redisSub = createClient({ url: 'redis://localhost:6379' });
 redisSub.connect();
 
 app.post('/ingest', async (req: Request, res: Response): Promise<any> => {
-  const { eventId: rawId, businessKey, data, jobId } = req.body ?? {}; // <-- Added jobId
+  const { eventId: rawId, businessKey, data, jobId } = req.body ?? {};
   
   if (rawId == null || rawId === '' || !businessKey) return res.status(400).send('Missing eventId or businessKey');
   
   const eventId = String(rawId);
+  const finalJobId = (process.env.NODE_ENV === 'test' && jobId) ? String(jobId) : eventId;
 
   await ingestQueue.add('event', { eventId, businessKey, data }, { 
-    jobId: jobId || eventId, // <-- Use override if provided, otherwise BullMQ uses eventId
+    jobId: finalJobId,
     attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { count: 1000 }

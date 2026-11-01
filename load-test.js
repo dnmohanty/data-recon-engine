@@ -2,7 +2,11 @@ import http from 'k6/http';
 import { check } from 'k6';
 
 export const options = { vus: 20, duration: '10s' };
-const RUN_ID = __ENV.RUN_ID || 'test';
+const RUN_ID = __ENV.RUN_ID;
+
+if (!RUN_ID) {
+  throw new Error("RUN_ID is required! Run with: k6 run -e RUN_ID=run1 load-test.js");
+}
 
 const bases = [
   'Apex', 'Vertex', 'Zenith', 'Quantum', 'Nexus', 'Omega', 'Stratos', 'Orion', 'Horizon', 'Titan',
@@ -31,10 +35,9 @@ export default function () {
   const res = http.post('http://localhost:3000/ingest', payload, params);
   check(res, { 'status is 202': (r) => r.status === 202 });
   
-  // Bypass BullMQ's dedup with a mutated jobId, but keep eventId identical to test DB constraints!
   const duplicatePayload = JSON.stringify({ 
-    eventId: eventId,             // EXACT SAME EVENT ID
-    jobId: `${eventId}_retry`,    // DIFFERENT JOB ID 
+    eventId: eventId,             
+    jobId: `${eventId}_retry`,     
     businessKey: variant.key, 
     data: { name: variant.name } 
   });
