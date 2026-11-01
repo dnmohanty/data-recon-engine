@@ -1,38 +1,38 @@
 import { pipeline } from '@xenova/transformers';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { normalizeName } from './normalize.js';
 
-export const THRESHOLD = 0.90; 
-
-const pairs = [
-  { a: "Acme Corp", b: "ACME Corporation", shouldMatch: true },
-  { a: "Acme Corp", b: "Acme Labs", shouldMatch: false }, // Hard negative
-  { a: "Apple Inc", b: "Apple Records", shouldMatch: false }, // Hard negative
-  { a: "Stripe", b: "Stripe, Inc.", shouldMatch: true },
-  { a: "Stripe", b: "Striper Fishing Co", shouldMatch: false },
-  { a: "McDonald's", b: "McDonalds Corporation", shouldMatch: true },
-  { a: "McDonald's", b: "McDowell's", shouldMatch: false },
-
-];
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function evaluate() {
-  const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-  const thresholdsToTest = [0.75, 0.80, 0.85, 0.90, 0.95];
+  const pairsRaw = await fs.readFile(path.join(__dirname, 'pairs.json'), 'utf-8');
+  const pairs = JSON.parse(pairsRaw);
 
-  console.log('Sweeping Thresholds...\n');
-  
-  for (const t of thresholdsToTest) {
+  const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+
+  console.log(`Computing embeddings for ${pairs.length} pairs...\n`);
+  const computedPairs = await Promise.all(pairs.map(async (p: any) => {
+    const normA = normalizeName(p.a);
+    const normB = normalizeName(p.b);
+    const embA = Array.from((await embedder(normA, { pooling: 'mean', normalize: true })).data) as number[];
+    const embB = Array.from((await embedder(normB, { pooling: 'mean', normalize: true })).data) as number[];
+    return { ...p, embA, embB };
+  }));
+
+  console.log('Sweeping Thresholds...');
+  for (let t = 0.60; t <= 0.95; t += 0.02) {
     let tp = 0, fp = 0, fn = 0;
 
-    for (const pair of pairs) {
-      const embA = Array.from((await embedder(pair.a.toLowerCase(), { pooling: 'mean', normalize: true })).data);
-      const embB = Array.from((await embedder(pair.b.toLowerCase(), { pooling: 'mean', normalize: true })).data);
-      
+    for (const p of computedPairs) {
       let similarity = 0;
-      for (let i = 0; i < embA.length; i++) similarity += (embA[i] as number) * (embB[i] as number);
+      for (let i = 0; i < p.embA.length; i++) similarity += p.embA[i] * p.embB[i];
 
       const isMatch = similarity >= t;
-      if (isMatch && pair.shouldMatch) tp++;
-      if (isMatch && !pair.shouldMatch) fp++;
-      if (!isMatch && pair.shouldMatch) fn++;
+      if (isMatch && p.shouldMatch) tp++;
+      if (isMatch && !p.shouldMatch) fp++;
+      if (!isMatch && p.shouldMatch) fn++;
     }
 
     const precision = tp / (tp + fp || 1);

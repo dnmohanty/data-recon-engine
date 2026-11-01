@@ -1,20 +1,19 @@
 import { expect, test } from 'vitest';
-import { calculateNewState } from './stateMachine.js';
+import { computeNextState } from './stateMachine.js';
 
-test('transitions to VERIFIED at 5.0', () => {
-  const result = calculateNewState(4.5, 0.5);
+test('NEW state transitions to VERIFIED when score reaches 5.0', () => {
+  const result = computeNextState('NEW', 4.5);
   expect(result.state).toBe('VERIFIED');
-  expect(result.reputation).toBe(5.0);
+  expect(result.reputation_score).toBe(5.0);
 });
 
-test('transitions to TRUSTED at 8.0', () => {
-  const result = calculateNewState(7.5, 0.5);
-  expect(result.state).toBe('TRUSTED');
-  expect(result.reputation).toBe(8.0);
+test('VERIFIED state stays VERIFIED', () => {
+  const result = computeNextState('VERIFIED', 5.0);
+  expect(result.state).toBe('VERIFIED');
+  expect(result.reputation_score).toBe(5.5);
 });
 
-test('caps reputation at 10.0', () => {
-  const result = calculateNewState(9.8, 0.5);
-  expect(result.state).toBe('TRUSTED');
-  expect(result.reputation).toBe(10.0);
+test('Score caps at 10.0', () => {
+  const result = computeNextState('VERIFIED', 9.8);
+  expect(result.reputation_score).toBe(10.0);
 });

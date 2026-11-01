@@ -1,9 +1,10 @@
-export function calculateNewState(currentReputation: number, currentScore: number = 0.5): { state: string, reputation: number } {
-  const newReputation = Math.min(Number(currentReputation) + currentScore, 10.0);
-  
-  let newState = 'NEW';
-  if (newReputation >= 5.0) newState = 'VERIFIED';
-  if (newReputation >= 8.0) newState = 'TRUSTED';
+export function computeNextState(currentState: string, currentScore: number) {
+  const reputation_score = Math.min(currentScore + 0.5, 10.0);
+  let state = currentState;
 
-  return { state: newState, reputation: newReputation };
+  if (reputation_score >= 5.0 && currentState === 'NEW') {
+    state = 'VERIFIED';
+  }
+
+  return { state, reputation_score };
 }

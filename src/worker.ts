@@ -1,87 +1,68 @@
 import { Worker } from 'bullmq';
 import { Pool } from 'pg';
-import { createClient } from 'redis';
 import { pipeline } from '@xenova/transformers';
-import { calculateNewState } from './stateMachine.js';
-import { THRESHOLD } from './evaluate.js';
+import { createClient } from 'redis';
+import { THRESHOLD } from './config.js';
+import { normalizeName } from './normalize.js';
+import { computeNextState } from './stateMachine.js';
 
 const pool = new Pool({ user: 'user', host: 'localhost', database: 'recon', password: 'password', port: 5432 });
-const redisPub = createClient({ url: 'redis://localhost:6379' });
+const redis = createClient({ url: 'redis://localhost:6379' });
+await redis.connect();
 
-class EmbeddingPipeline {
-  static instancePromise: Promise<any> | null = null;
-  
-  static async getInstance() {
-    if (!this.instancePromise) {
-      this.instancePromise = pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2').catch(err => {
-        this.instancePromise = null; // Clear cache on failure so next job retries
-        throw err;
-      });
-    }
-    return this.instancePromise;
-  }
-}
+const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
 
-const worker = new Worker('ingest', async (job) => {
-  if (!redisPub.isOpen) await redisPub.connect();
+const worker = new Worker('ingest', async job => {
+  const { eventId, businessKey, data } = job.data;
   
-  // Coerce eventId to string to prevent BullMQ/Redis errors
-  const eventId = String(job.data.eventId);
-  const businessKey = job.data.businessKey;
-  const data = job.data.data;
-  
-  const textToEmbed = (data?.name || businessKey).toLowerCase().trim();
-  const embedder = await EmbeddingPipeline.getInstance();
-  const output = await embedder(textToEmbed, { pooling: 'mean', normalize: true });
-  const embeddingStr = `[${Array.from(output.data).join(',')}]`;
+  const isDuplicate = await redis.set(`evt:${eventId}`, '1', { NX: true, EX: 86400 });
+  if (!isDuplicate) return;
 
   const client = await pool.connect();
-  let publishPayload = null;
-
   try {
     await client.query('BEGIN');
-
-    const eventRes = await client.query(
-      `INSERT INTO processed_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING event_id`, [eventId]
-    );
-    if (eventRes.rows.length === 0) {
+    
+    // Postgres layer 2 idempotency check
+    const checkRes = await client.query('SELECT 1 FROM processed_events WHERE event_id = $1', [eventId]);
+    if (checkRes.rowCount && checkRes.rowCount > 0) {
       await client.query('ROLLBACK');
       return;
     }
 
-    await client.query('SELECT pg_advisory_xact_lock(1)');
+    const normalizedName = normalizeName(data?.name ?? businessKey);
+    const emb = Array.from((await embedder(normalizedName, { pooling: 'mean', normalize: true })).data);
+    const embString = `[${emb.join(',')}]`;
 
-    let match = null;
-    const exactRes = await client.query(`SELECT id, state, reputation_score FROM entities WHERE business_key = $1 FOR UPDATE`, [businessKey]);
-    
-    if (exactRes.rows.length > 0) {
-      match = exactRes.rows[0];
-    } else {
-      const searchRes = await client.query(
-        `SELECT id, state, reputation_score, 1 - (embedding <=> $1::vector) AS similarity 
-         FROM entities ORDER BY embedding <=> $1::vector LIMIT 1`, [embeddingStr]
+    // Advisory lock to prevent deduplication race conditions
+    const lockKey = parseInt(businessKey.replace(/\D/g, '').slice(0, 9) || '1', 10);
+    await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+
+    const matchRes = await client.query(`
+      SELECT id, state, reputation_score 
+      FROM entities 
+      WHERE 1 - (embedding <=> $1::vector) >= $2 
+      ORDER BY embedding <=> $1::vector ASC 
+      LIMIT 1
+    `, [embString, THRESHOLD]);
+
+    let entityId;
+    if (matchRes.rows.length > 0) {
+      const match = matchRes.rows[0];
+      entityId = match.id;
+      const newState = computeNextState(match.state, parseFloat(match.reputation_score));
+      await client.query(
+        'UPDATE entities SET state = $1, reputation_score = $2 WHERE id = $3',
+        [newState.state, newState.reputation_score, entityId]
       );
-      if (searchRes.rows[0] && searchRes.rows[0].similarity >= THRESHOLD) {
-        match = searchRes.rows[0];
-        await client.query(`SELECT id FROM entities WHERE id = $1 FOR UPDATE`, [match.id]);
-      }
-    }
-
-    if (!match) {
+    } else {
       const insertRes = await client.query(
-        `INSERT INTO entities (business_key, embedding, state, reputation_score) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [businessKey, embeddingStr, 'NEW', 1.0]
+        'INSERT INTO entities (business_key, embedding, state, reputation_score) VALUES ($1, $2, $3, $4) RETURNING id',
+        [businessKey, embString, 'NEW', 1.0]
       );
-      publishPayload = { id: insertRes.rows[0].id, state: 'NEW', reputation: 1.0 };
-    } else {
-      const { state: newState, reputation: newRep } = calculateNewState(match.reputation_score, 0.5);
-      const updateRes = await client.query(
-        `UPDATE entities SET state = $1, reputation_score = $2 WHERE id = $3 RETURNING id, state, reputation_score`,
-        [newState, newRep, match.id]
-      );
-      publishPayload = { id: updateRes.rows[0].id, state: updateRes.rows[0].state, reputation: updateRes.rows[0].reputation_score };
+      entityId = insertRes.rows[0].id;
     }
-    
+
+    await client.query('INSERT INTO processed_events (event_id) VALUES ($1)', [eventId]);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -89,6 +70,4 @@ const worker = new Worker('ingest', async (job) => {
   } finally {
     client.release();
   }
-
-  if (publishPayload) await redisPub.publish('entity_updates', JSON.stringify(publishPayload));
-}, { connection: { host: 'localhost', port: 6379 }, concurrency: 10 });
+}, { connection: { host: 'localhost', port: 6379 }, concurrency: 5 });
