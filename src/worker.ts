@@ -2,21 +2,29 @@ import { Worker } from 'bullmq';
 import { Pool } from 'pg';
 import { pipeline } from '@xenova/transformers';
 import { createClient } from 'redis';
+import {Redis} from 'ioredis';
 import { THRESHOLD } from './config.js';
 import { normalizeName } from './normalize.js';
 import { computeNextState } from './stateMachine.js';
 
-const pool = new Pool({ user: 'user', host: 'localhost', database: 'recon', password: 'password', port: 5432 });
-const redisPub = createClient({ url: 'redis://localhost:6379' });
+const dbUrl = process.env.DATABASE_URL || 'postgresql://user:password@localhost:5432/recon';
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+
+const pool = new Pool({ 
+  connectionString: dbUrl,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
+
+const redisPub = createClient({ url: redisUrl });
 await redisPub.connect();
 
+const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
 const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
 
 const worker = new Worker('ingest', async job => {
   const { eventId, businessKey, data } = job.data;
   
   const normalizedName = normalizeName(data?.name ?? businessKey);
-  // Embedding is computed OUTSIDE the transaction!
   const emb = Array.from((await embedder(normalizedName, { pooling: 'mean', normalize: true })).data);
   const embString = `[${emb.join(',')}]`;
 
@@ -92,6 +100,6 @@ const worker = new Worker('ingest', async job => {
   } finally {
     client.release();
   }
-}, { connection: { host: 'localhost', port: 6379 }, concurrency: 5 });
+}, { connection, concurrency: 5 });
 
 worker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));

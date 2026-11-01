@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
- "scripts": {
+  "scripts": {
     "start": "tsx src/index.ts",
     "worker": "tsx src/worker.ts",
     "evaluate": "tsx src/evaluate.ts",
@@ -16,6 +16,8 @@
     "bullmq": "^6.5.3",
     "cors": "^2.8.6",
     "express": "^5.3.0",
+    "express-rate-limit": "^8.7.2",
+    "ioredis": "^6.0.0",
     "pg": "^8.23.1",
     "redis": "^6.3.1"
   },
