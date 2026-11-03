@@ -103,4 +103,4 @@ const worker = new Worker('ingest', async job => {
     client.release();
   }
 }, { connection, concurrency: Number(process.env.WORKER_CONCURRENCY || 5) });
-
+worker.on('failed', (job, err) => console.error(`Job ${job?.id} failed:`, err));
