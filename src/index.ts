@@ -14,7 +14,8 @@ app.use(express.json());
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
   max: 500, 
-  message: 'Rate limit exceeded.'
+  message: 'Rate limit exceeded.',
+  skip: () => process.env.NODE_ENV === 'test'
 });
 
 const demoLimiter = rateLimit({
