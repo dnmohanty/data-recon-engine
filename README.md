@@ -66,7 +66,7 @@ Passing run (clean state, unique `RUN_ID`, worker concurrency 5): 6,587 iteratio
 | API + worker | Render (one instance runs both processes) |
 | PostgreSQL + pgvector, Redis | Managed free-tier services |
 
-Configuration is by environment variable: DATABASE_URL, REDIS_URL, PORT, WORKER_CONCURRENCY, DB_SSL, and NEXT_PUBLIC_API_URL on the frontend.
+Configuration is by environment variable: `DATABASE_URL`, `REDIS_URL`, `PORT`, `WORKER_CONCURRENCY` (default 5), `DB_SSL` (set to `true` for a managed Postgres that requires SSL), and `NEXT_PUBLIC_API_URL` on the frontend. The public API is rate limited (`/ingest`: 500 requests per 15 minutes per IP; `/demo`: 5 per 15 minutes), and the demo endpoint only queues a fixed sample set. The rate limit is skipped when `NODE_ENV=test` so the load test can run.
 
 ## Limitations
 
@@ -94,3 +94,7 @@ npm run assert
 npm run evaluate          # threshold sweep
 npm test                  # state machine
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
