@@ -2,6 +2,13 @@
 
 An event-ingestion pipeline that merges duplicate company records from noisy crowdsourced submissions ("Apex Corp", "Apex Incorporated", "Apex, Inc.") into one entity, safely under concurrent writes, and streams state changes to a live dashboard.
 
+**Live demo:** [dashboard](https://frontend-lemon-omega-61.vercel.app) · [API](https://data-recon-engine.onrender.com)
+*The API runs on a free tier and sleeps when idle. The first request can take about a minute to wake it. Click "Run Demo" on the dashboard and wait for entities to appear.*
+
+https://github.com/user-attachments/assets/43223e51-3328-4a69-934c-9ae4051d0b38
+
+
+
 **Stack:** TypeScript · Express · BullMQ/Redis · PostgreSQL + pgvector · `all-MiniLM-L6-v2` (local embeddings via `@xenova/transformers`) · Next.js (SSE dashboard) · k6 · Vitest
 
 ```
@@ -42,13 +49,23 @@ POST /ingest → BullMQ (Redis) → worker → PostgreSQL + pgvector
 - 0 failed jobs
 - 0 entities with `reputation_score ≠ 2.0` (each entity gets 2 confirming merges from 3 variants: 1.0 + 0.5 + 0.5)
 
-Passing run (clean state, unique `RUN_ID`): 6,587 iterations, 13,174 requests (0 failed, all `202`), p95 request latency 33.6 ms. `assert`: 50 entities, 150 processed events, 0 failed jobs, 0 bad reputations.
+Passing run (clean state, unique `RUN_ID`, worker concurrency 5): 6,587 iterations, 13,174 requests (0 failed, all `202`), p95 request latency 33.6 ms. `assert`: 50 entities, 150 processed events, 0 failed jobs, 0 bad reputations.
 
-**Mutation test.** To check the test can actually detect a race, I removed the advisory lock and re-ran. Result: entity count stayed at 50 but **2 entities ended with a wrong reputation, and the assertion failed.** The reputation invariant is what catches lost updates. The entity count alone did not.
+**Mutation test.** To check the test can actually detect a race, I removed the advisory lock and re-ran with concurrent workers. Result: entity count stayed at 50 but **2 entities ended with a wrong reputation, and the assertion failed.** The reputation invariant is what catches lost updates. The entity count alone did not. (With worker concurrency 1 there is no race to detect, so this test only means something at concurrency > 1.)
 
 **Similarity threshold.** 100 labeled pairs (40 should-match, 60 should-not) in `src/pairs.json`; `npm run evaluate` sweeps thresholds. At 0.92: **precision 100%, recall 92.5%** (37 of 40). Lowering to 0.90 drops precision to 92.5%; 0.94 gives the same result as 0.92. *The threshold was chosen and measured on the same 100 pairs, so these figures are optimistic; they are not held-out accuracy.*
 
 **Unit tests.** `npm test` covers the state machine transitions.
+
+## Deployment
+
+| Part | Host |
+|---|---|
+| Dashboard (Next.js) | Vercel |
+| API + worker | Render (one instance runs both processes) |
+| PostgreSQL + pgvector, Redis | Managed free-tier services |
+
+Configuration is by environment variable: `DATABASE_URL`, `REDIS_URL`, `PORT`, `WORKER_CONCURRENCY` (default 5), and `NEXT_PUBLIC_API_URL` on the frontend. The public API has a rate limit, and the demo endpoint only queues a fixed sample set.
 
 ## Limitations
 
@@ -56,23 +73,23 @@ Passing run (clean state, unique `RUN_ID`): 6,587 iterations, 13,174 requests (0
 - **The k6 numbers measure API ingest latency, not processing throughput.** The API only enqueues; the load test sends 300 jobs per run (the rest are deduplicated at enqueue).
 - **Threshold evaluated on its tuning set** (see above); no held-out set.
 - **Recall gap.** About 7% of true duplicates in the labeled set are not merged at 0.92.
-- **Single node.** One Redis, one Postgres, local credentials hardcoded for the demo. Not a multi-node or fault-tolerant deployment.
+- **Not a multi-node design.** One Redis and one Postgres, with the API and worker sharing a single free-tier instance in the demo. It is not a distributed or fault-tolerant deployment.
 - **SSE** uses one Redis subscription listener per connected client on a shared connection. Fine for a demo, not tuned for many clients.
 - **Reputation** is a simple confirmation counter, not a trust model.
 
-## Run it
+## Run it locally
 
 ```bash
 docker compose up -d
 docker exec -i $(docker compose ps -q db) psql -U user -d recon < init.sql
 npm install
-npm start                # API on :3000
-npm run worker           # in a second terminal
+NODE_ENV=test npm start   # API on :3000 (NODE_ENV=test enables the jobId override the load test uses)
+npm run worker            # in a second terminal
 cd frontend && npm install && npm run dev   # dashboard on :3001
 
 # test (clean state each time: flush Redis, TRUNCATE entities, processed_events)
 k6 run -e RUN_ID=run1 load-test.js
 npm run assert
-npm run evaluate         # threshold sweep
-npm test                 # state machine
+npm run evaluate          # threshold sweep
+npm test                  # state machine
 ```
