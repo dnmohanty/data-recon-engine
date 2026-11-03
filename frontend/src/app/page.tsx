@@ -7,8 +7,11 @@ export default function Dashboard() {
   const [businessKey, setBusinessKey] = useState('acme-corp');
   const [name, setName] = useState('Acme Corporation');
 
+  // This ensures the frontend talks to Render in production, but works locally too!
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
   useEffect(() => {
-    const eventSource = new EventSource('http://localhost:3000/stream');
+    const eventSource = new EventSource(`${API_URL}/stream`);
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -16,13 +19,13 @@ export default function Dashboard() {
     };
 
     return () => eventSource.close();
-  }, []);
+  }, [API_URL]);
 
   const triggerEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     const eventId = `manual_evt_${Date.now()}`;
     
-    await fetch('http://localhost:3000/ingest', {
+    await fetch(`${API_URL}/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ eventId, businessKey, data: { name } })
@@ -57,14 +60,15 @@ export default function Dashboard() {
               </div>
               <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded transition-colors">
                 Fire Event 🚀
-                <button 
-  onClick={() => fetch('https://data-recon-engine.onrender.com /demo')}
-  className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
->
-  Run 150-Event Demo 🧪
-</button>
               </button>
             </form>
+            <button 
+              type="button"
+              onClick={() => fetch(`${API_URL}/demo`, { method: 'POST' })} 
+              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" 
+            >
+              Run Demo 🧪
+            </button>
           </div>
 
           <div className="bg-black p-6 rounded-lg border border-gray-800 shadow-lg font-mono flex flex-col">
