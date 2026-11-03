@@ -66,7 +66,7 @@ Passing run (clean state, unique `RUN_ID`, worker concurrency 5): 6,587 iteratio
 | API + worker | Render (one instance runs both processes) |
 | PostgreSQL + pgvector, Redis | Managed free-tier services |
 
-Configuration is by environment variable: `DATABASE_URL`, `REDIS_URL`, `PORT`, `WORKER_CONCURRENCY` (default 5), and `NEXT_PUBLIC_API_URL` on the frontend. The public API has a rate limit, and the demo endpoint only queues a fixed sample set.
+Configuration is by environment variable: DATABASE_URL, REDIS_URL, PORT, WORKER_CONCURRENCY, DB_SSL, and NEXT_PUBLIC_API_URL on the frontend.
 
 ## Limitations
 
