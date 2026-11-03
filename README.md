@@ -5,7 +5,8 @@ An event-ingestion pipeline that merges duplicate company records from noisy cro
 **Live demo:** [dashboard](https://frontend-lemon-omega-61.vercel.app) · [API](https://data-recon-engine.onrender.com)
 *The API runs on a free tier and sleeps when idle. The first request can take about a minute to wake it. Click "Run Demo" on the dashboard and wait for entities to appear.*
 
-<img width="1280" height="681" alt="demo" src="https://github.com/user-attachments/assets/68845a33-baee-46dc-9674-10b2d31f0598" />
+<img width="1280" height="684" alt="demo2" src="https://github.com/user-attachments/assets/858a5d13-1ec7-4c62-96fc-84b606f864e5" />
+
 
 
 
