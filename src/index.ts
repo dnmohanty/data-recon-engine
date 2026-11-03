@@ -6,19 +6,27 @@ import { Redis } from 'ioredis';
 import rateLimit from 'express-rate-limit';
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
-// 1. Rate Limiting (max 50 requests per 15 mins per IP)
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
   max: 500, 
+  message: 'Rate limit exceeded.'
+});
+
+const demoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 5, 
   message: 'Demo rate limit exceeded. Please try again later.'
 });
-// app.use('/ingest', apiLimiter);
-// app.use('/demo', apiLimiter);
 
-// Use the live URLs if we are in production, otherwise use localhost
+app.use('/ingest', apiLimiter);
+app.use('/demo', demoLimiter);
+
+
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
 
@@ -26,12 +34,12 @@ const ingestQueue = new Queue('ingest', { connection });
 const redisSub = createClient({ url: redisUrl });
 redisSub.connect();
 
-// 2. Public Demo Route to light up the dashboard
-app.get('/demo', async (req: Request, res: Response) => {
+
+app.post('/demo', async (req: Request, res: Response) => {
   const companies = ['Apex', 'Vertex', 'Zenith', 'Quantum', 'Nexus'];
   let count = 0;
   for (const comp of companies) {
-    for (let i = 1; i <= 3; i++) { // Send 3 events per company to trigger deduplication
+    for (let i = 1; i <= 3; i++) { 
       const eventId = `demo_${Date.now()}_${count++}`;
       await ingestQueue.add('event', { 
         eventId, 
