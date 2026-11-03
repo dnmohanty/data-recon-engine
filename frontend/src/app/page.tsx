@@ -65,13 +65,17 @@ export default function Dashboard() {
             <button 
               type="button"
               onClick={async () => {
-                const res = await fetch(`${API_URL}/demo`, { method: 'POST' });
-                if (res.status === 429) {
-                  setDemoStatus('Demo limit reached. Try again later.');
-                } else if (res.ok) {
-                  setDemoStatus('Demo started! Watch the stream.');
-                } else {
-                  setDemoStatus('Error starting demo.');
+                try {
+                  const res = await fetch(`${API_URL}/demo`, { method: 'POST' });
+                  if (res.status === 429) {
+                    setDemoStatus('Demo limit reached. Try again later.');
+                  } else if (res.ok) {
+                    setDemoStatus('Demo started! Watch the stream.');
+                  } else {
+                    setDemoStatus('Error starting demo.');
+                  }
+                } catch (error) {
+                  setDemoStatus('Server is waking up, try again in a minute.');
                 }
                 setTimeout(() => setDemoStatus(''), 5000);
               }} 
