@@ -6,8 +6,8 @@ export default function Dashboard() {
   const [events, setEvents] = useState<any[]>([]);
   const [businessKey, setBusinessKey] = useState('acme-corp');
   const [name, setName] = useState('Acme Corporation');
+  const [demoStatus, setDemoStatus] = useState('');
 
-  // This ensures the frontend talks to Render in production, but works locally too!
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
@@ -64,11 +64,22 @@ export default function Dashboard() {
             </form>
             <button 
               type="button"
-              onClick={() => fetch(`${API_URL}/demo`, { method: 'POST' })} 
+              onClick={async () => {
+                const res = await fetch(`${API_URL}/demo`, { method: 'POST' });
+                if (res.status === 429) {
+                  setDemoStatus('Demo limit reached. Try again later.');
+                } else if (res.ok) {
+                  setDemoStatus('Demo started! Watch the stream.');
+                } else {
+                  setDemoStatus('Error starting demo.');
+                }
+                setTimeout(() => setDemoStatus(''), 5000);
+              }} 
               className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" 
             >
               Run Demo 🧪
             </button>
+            {demoStatus && <p className="text-sm text-center mt-2 text-amber-400">{demoStatus}</p>}
           </div>
 
           <div className="bg-black p-6 rounded-lg border border-gray-800 shadow-lg font-mono flex flex-col">
